@@ -1,4 +1,5 @@
 import numpy as np
+import collections as col
 
 # Constants
 BOARD_SIZE = 8
@@ -8,7 +9,6 @@ COLOUR_IDX = 1
 # even if empty
 ENEMY = 0
 ALLY = 1
-
 
 
 class Player:
@@ -25,11 +25,11 @@ class Player:
         """
         # TODO: Set up state representation.
         self.colour = colour
-        self.state = initState()
+        self.state = self.initState()
 
-    def initState():
+    def initState(self):
         starting_shape = np.zeros((2, 2, 2), np.int8)
-        starting_shape = [:, :, STACK_IDX] += 1
+        starting_shape[:, :, STACK_IDX] += 1
 
         board = np.zeros((BOARD_SIZE, BOARD_SIZE, 2), np.int8)
         # Starting rows initial positions of black and white respectively
@@ -41,15 +41,11 @@ class Player:
 
         for i in row_start:
             for j in range(0, BOARD_SIZE-1, 3):
-                board[j:j+starting_shape.shape(0),
-                      i:i+starting_shape.shape(1)] = starting_shape
+                board[j:j+starting_shape.shape[0],
+                      i:i+starting_shape.shape[1]] = starting_shape
                 starting_shape[:, :, COLOUR_IDX] += 1
 
         return board
-
-
-
-
 
     def action(self):
         """
@@ -60,9 +56,21 @@ class Player:
         return an allowed action to play on this turn. The action must be
         represented based on the spec's instructions for representing actions.
         """
-        # TODO: Decide what action to take, and return it
-        return ("BOOM", (0, 0))
-
+        # Dummy actions for bug testing. Just moves everything into a corner
+        # and booms
+        # TODO: Actually implement this
+        allies = np.where(self.state[:, :, STACK_IDX] == 1)
+        # ally_coords = np.stack(allies, axis=1).toList()
+        # TEST: Below is pretty suss
+        allyCoords = col.deque([(x, y) for (x, y) in zip(allies[0], allies[1])])
+        # Coords should never be empty, otherwise the player has already lost
+        coords = allyCoords.popleft()
+        if self.legalMove(coords, (coords[0]+1, coords[1])):
+            return ("MOVE", 1, coords, (coords[0]+1, coords[0]))
+        elif self.legalMove(coords, (coords[0], coords[1]+1)):
+            return ("MOVE", 1, coords, (coords[0], coords[1]+1))
+        else:
+            return ("BOOM", coords)
 
     def update(self, colour, action):
         """
@@ -82,7 +90,6 @@ class Player:
         for the player colour (your method does not need to validate the action
         against the game rules).
         """
-        # TODO: Update state representation in response to action.
         if action[0] == "MOVE":
             n, prev, to = action[1], action[2], action[3]
             # Consider making a hard copy here
@@ -95,19 +102,26 @@ class Player:
                     self.state[prev[0], prev[1], COLOUR_IDX] = ENEMY
                 self.state[to[0], to[1], COLOUR_IDX] = ALLY
 
-
-        if action[0] = "BOOM":
+        if action[0] == "BOOM":
             self.boomPieces(action[1])
 
+    # TODO: Will most likely need to be changed when action is changed
+    def legalMove(self, oldCoord, newCoord):
+        if self.outOfBounds(newCoord[0]) or self.outOfBounds(newCoord[1]):
+            return False
+        else:
+            return True
 
+    def outOfBounds(self, pos):
+        return True if pos < 0 or pos > 8 else False
 
     # TODO: Refactor so that total pieces caught in a chain-boom can be queried
     # Takes a 2-tuple x,y
-    def boomPieces(coords):
+    def boomPieces(self, coords):
         boomQueue = [coords]
         while not boomQueue.empty():
             boomed = boomQueue.pop(0)
-            caught = collectBoomed(boomed)
+            caught = self.collectBoomed(boomed)
             # Append each element to keep the list 2D
             for i in caught:
                 boomQueue.append(i)
@@ -117,7 +131,7 @@ class Player:
 
     # Finds the pieces caught in a singular explosion
     # Takes a 2-tuple x,y, returns list 2-tuple coordinates of pieces caught
-    def collectBoomed(boomed):
+    def collectBoomed(self, boomed):
         xbounds, ybounds = getBounds(boomed[0]), getBounds(boomed[1])
         # May have to switch indexing due to cartesian coordinates
         explosion = self.state[xbounds[0]:xbounds[1], ybounds[0]:ybounds[1], :]
@@ -126,9 +140,9 @@ class Player:
         caught = np.stack(pieces, axis=1).toList()
         return caught
 
-
-    def getBounds(coord):
+    # Returns the boundaries for an explosion centred on coord of boomed piece
+    def getBounds(self, coord):
         # +2 as array slicing is non-inclusive on upper bound
-        upper = BOARD_SIZE + 1 if coord + 1 > BOARD_SIZE else upper = coord + 2
-        lower = 0 if coord - 1 < 0 else lower = coord - 1
+        upper = BOARD_SIZE + 1 if self.outOfBounds(coord + 1) else coord + 2
+        lower = 0 if self.outOfBounds(coord - 1) else coord - 1
         return (lower, upper)
