@@ -134,7 +134,7 @@ def get_options():
         positionals.add_argument(f'player{num}_loc', metavar=col,
             action=PackageSpecAction,
             help=f"location of {Col}'s Player class (e.g. package name)")
-            
+
 
     # optional arguments used for configuration:
     optionals = parser.add_argument_group(title="optional arguments")
@@ -165,14 +165,14 @@ def get_options():
         help="switch to printing the debug board (with coordinates) "
             "(equivalent to -v or -v3).")
     verbosity_group.add_argument('-v', '--verbosity',
-        type=int, choices=range(0, VERBOSITY_LEVELS), nargs='?', 
+        type=int, choices=range(0, VERBOSITY_LEVELS), nargs='?',
         default=VERBOSITY_DEFAULT, const=VERBOSITY_NOVALUE,
         help="control the level of output (not including output from "
             "players). 0: no output except result; 1: commentary, but no"
             " board display; 2: (default) commentary and board display; "
             "3: (equivalent to -D) larger board showing coordinates.")
 
-    optionals.add_argument('-l', '--logfile', 
+    optionals.add_argument('-l', '--logfile',
         type=str, nargs='?',
         default=LOGFILE_DEFAULT, const=LOGFILE_NOVALUE, metavar="LOGFILE",
         help="if you supply this flag the referee will create a log of all "
@@ -228,7 +228,7 @@ def get_options():
 class PackageSpecAction(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
         pkg_spec = values
-        
+
         # detect alternative class:
         if ":" in pkg_spec:
             pkg, cls = pkg_spec.split(':', maxsplit=1)
