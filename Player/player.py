@@ -9,6 +9,7 @@ COLOUR_IDX = 1
 # even if empty
 ENEMY = 0
 ALLY = 1
+LEGAL_BOOMS = ((2, 2, 2), (3, 3, 2), (2, 3, 2), (3, 2, 2))
 
 
 class Player:
@@ -65,12 +66,12 @@ class Player:
         allyCoords = col.deque([(x, y) for (x, y) in zip(allies[0], allies[1])])
         # Coords should never be empty, otherwise the player has already lost
         coords = allyCoords.popleft()
-        if self.legalMove(coords, (coords[0]+1, coords[1])):
-            return ("MOVE", 1, coords, (coords[0]+1, coords[1]))
-        elif self.legalMove(coords, (coords[0], coords[1]+1)):
-            return ("MOVE", 1, coords, (coords[0], coords[1]+1))
-        else:
-            return ("BOOM", coords)
+#         if self.legalMove(coords, (coords[0]+1, coords[1])):
+#             return ("MOVE", 1, coords, (coords[0]+1, coords[1]))
+#         elif self.legalMove(coords, (coords[0], coords[1]+1)):
+#             return ("MOVE", 1, coords, (coords[0], coords[1]+1))
+#         else:
+        return ("BOOM", coords)
 
     def update(self, colour, action):
         """
@@ -111,7 +112,6 @@ class Player:
             newState[to[0], to[1], COLOUR_IDX] = ALLY
         return newState
 
-
     # TODO: Will most likely need to be changed when action is changed
     def legalMove(self, oldCoord, newCoord):
         return not (self.outOfBounds(newCoord[0]) or self.outOfBounds(newCoord[1]))
@@ -122,8 +122,9 @@ class Player:
     # Returns the resultant state if a piece is boomed
     def boomPiece(self, coord, state):
         newState = state.copy()
-        boomSets = self.collectAllBoomed(coord)
+        boomSets = self.collectAllBoomed(coord, state)
         allBoomed = boomSets[0].union(boomSets[1])
+        print("boomPiece: " + str(allBoomed))
         for i in allBoomed:
             newState[i[0], i[1], STACK_IDX] = 0
             newState[i[0], i[1], COLOUR_IDX] = 0
@@ -138,23 +139,31 @@ class Player:
             boomList = [{}, {coord}]
         else:
             boomList = [{coord}, {}]
-        caught = self.collectBoomed(coord)
+        caught = self.collectBoomed(coord, state)
+        print(str(caught))
         for i in caught:
             if state[i[0], i[1], COLOUR_IDX] == self.colour:
+                # print(boomList[ALLY])
                 boomList[ALLY].add(i)
             else:
                 boomList[ENEMY].add(i)
-            caught.append(self.collectBoomed)
+            print(str(caught))
+            caught.union(self.collectBoomed(i, state))
+        print("boomList: " + str(boomList))
+        return boomList
 
     # Finds the pieces caught in a singular explosion
-    # Takes a 2-tuple x,y, returns list 2-tuple coordinates of pieces caught
+    # Takes a 2-tuple x,y, returns set of 2-tuple coordinates of pieces caught
     def collectBoomed(self, boomed, state):
         xbounds, ybounds = self.getBounds(boomed[0]), self.getBounds(boomed[1])
+        # print("BOUNDS " + str(xbounds) + ", " + str(ybounds))
         # May have to switch indexing due to cartesian coordinates
         explosion = state[xbounds[0]:xbounds[1], ybounds[0]:ybounds[1], :]
-        assert(explosion.shape() == (3, 3))
+        assert(explosion.shape in LEGAL_BOOMS)
         pieces = np.where(explosion[:, :, STACK_IDX] > 0)
-        caught = np.stack(pieces, axis=1).toList()
+        # print("PIECES: " + str(pieces))
+        caught = set(map(lambda i: self.explosionToCoords(boomed, i),
+                     np.stack(pieces, axis=1).tolist()))
         return caught
 
     # Returns the boundaries for an explosion centred on coord of boomed piece
@@ -164,6 +173,12 @@ class Player:
         lower = 0 if self.outOfBounds(coord - 1) else coord - 1
         return (lower, upper)
 
+    # Returns the coordinates of pieces caught in an 'explosion' slice
+    # relative to the actual state
+    def explosionToCoords(self, centre, coord):
+        xoff = 0 if centre[0] == 0 else -1
+        yoff = 0 if centre[1] == 0 else -1
+        return (coord[0] + xoff + centre[0], coord[1] + yoff + centre[1])
 
 # class Heurisics:
 #     def __init__(self):
