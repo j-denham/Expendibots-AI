@@ -1,29 +1,20 @@
 import numpy as np
 import collections as col
+import random
 
 # Constants
 BOARD_SIZE = 8
 STACK_IDX = 0
 COLOUR_IDX = 1
-# All tiles that are not occupied by allied pieces are cosidered enemies
+# All tiles that are not occupied by allied pieces are considered enemies
 # even if empty
 ENEMY = 0
 ALLY = 1
-LEGAL_BOOMS = ((2, 2, 2), (3, 3, 2), (2, 3, 2), (3, 2, 2))
+LEGAL_BOOM_SHAPES = ((2, 2, 2), (3, 3, 2), (2, 3, 2), (3, 2, 2))
 
 
 class Player:
     def __init__(self, colour):
-        """
-        This method is called once at the beginning of the game to initialise
-        your player. You should use this opportunity to set up your own internal
-        representation of the game state, and any other information about the
-        game state you would like to maintain for the duration of the game.
-
-        The parameter colour will be a string representing the player your
-        program will play as (White or Black). The value will be one of the
-        strings "white" or "black" correspondingly.
-        """
         # TODO: Set up state representation.
         self.colour = colour
         self.state = self.initState()
@@ -57,21 +48,22 @@ class Player:
         return an allowed action to play on this turn. The action must be
         represented based on the spec's instructions for representing actions.
         """
-        # Dummy actions for bug testing. Just moves everything into a corner
-        # and booms
-        # TODO: Implement this function with some basic heursitics
-        allies = np.where(self.state[:, :, COLOUR_IDX] == ALLY)
-        # ally_coords = np.stack(allies, axis=1).toList()
-        # TEST: Below is pretty suss
-        allyCoords = col.deque([(x, y) for (x, y) in zip(allies[0], allies[1])])
-        # Coords should never be empty, otherwise the player has already lost
-        coords = allyCoords.popleft()
-#         if self.legalMove(coords, (coords[0]+1, coords[1])):
-#             return ("MOVE", 1, coords, (coords[0]+1, coords[1]))
-#         elif self.legalMove(coords, (coords[0], coords[1]+1)):
-#             return ("MOVE", 1, coords, (coords[0], coords[1]+1))
-#         else:
-        return ("BOOM", coords)
+        bestCoord, bestCount = self.getMostDesirableBoom(self.state)
+        print("Coords: " + str(self.getAllyCoords(self.state)))
+        # Make a move based on the desirable boom heuristic
+        if bestCoord is not None:
+            return ("BOOM", bestCoord)
+        # Otherwise pick a random one
+        # Can either call allActions or allMoves here
+        allActions = list(self.getAllMoves(self.state))
+        pickIndex = random.randint(0, len(allActions)-1)
+        return allActions[pickIndex]
+
+    # Returns the set of all possible actions a player can make
+    def getAllActions(self, state):
+        allMoves = self.getAllMoves(state)
+        allBooms = {("BOOM", i) for i in self.getAllyCoords(state)}
+        return allMoves.union(allBooms)
 
     def update(self, colour, action):
         """
@@ -112,9 +104,55 @@ class Player:
             newState[to[0], to[1], COLOUR_IDX] = ALLY
         return newState
 
-    # TODO: Will most likely need to be changed when action is changed
-    def legalMove(self, oldCoord, newCoord):
-        return not (self.outOfBounds(newCoord[0]) or self.outOfBounds(newCoord[1]))
+    def legalMove(self, oldCoord, newCoord, state):
+        if (self.outOfBounds(newCoord[0]) or self.outOfBounds(newCoord[1])):
+            return False
+        tile = state[newCoord[0], newCoord[1], :]
+        # Can't move to a square occupied by enemy pieces
+        if tile[COLOUR_IDX] == ENEMY and tile[STACK_IDX] != 0:
+            return False
+        return True
+
+    def getAllMoves(self, state):
+        # Coords should never be empty, otherwise the player has already lost
+        allyCoords = self.getAllyCoords(state)
+        # FIX: These are printing properly
+        allMoves = set()
+        for i in allyCoords:
+            stack = state[i[0], i[1], STACK_IDX]
+            # print("Stack: " + str(stack))
+            moveCoords = self.getMoveCoords(i, stack, state)
+            # print("Move Coords: " + str(moveCoords))
+            moveSet = self.enumStackedMoves(i, stack, moveCoords)
+            # print("Move Set: " + str(moveSet))
+            allMoves = allMoves.union(moveSet)
+        # print("All Moves: " + str(allMoves))
+        return allMoves
+
+    def getAllyCoords(self, state):
+        allies = np.where(self.state[:, :, COLOUR_IDX] == ALLY)
+        allyCoords = set([(x, y) for (x, y) in zip(allies[0], allies[1])])
+        return allyCoords
+
+    # Returns the set of coordinates to which a piece or stack
+    # of pieces can move to
+    # FIX: This isn't returning any moves
+    def getMoveCoords(self, coord, stack, state):
+        x, y = coord[0], coord[1]
+        coords = set()
+        for i in range(1, stack+1):
+            moves = set(filter(lambda c: self.legalMove(coord, c, state),
+                               [(x+i, y), (x-i, y), (x, y+i), (x, y-i)]))
+            coords = coords.union(moves)
+        # print("Coords: " + str(coords))
+        return coords
+
+    def enumStackedMoves(self, coord, stack, moveCoords):
+        moveSet = set()
+        for i in moveCoords:
+            for n in range(1, stack+1):
+                moveSet.add(("MOVE", n, coord, i))
+        return moveSet
 
     def outOfBounds(self, pos):
         return True if pos < 0 or pos > BOARD_SIZE - 1 else False
@@ -124,7 +162,6 @@ class Player:
         newState = state.copy()
         boomSets = self.collectAllBoomed(coord, state)
         allBoomed = boomSets[0].union(boomSets[1])
-        print("boomPiece: " + str(allBoomed))
         for i in allBoomed:
             newState[i[0], i[1], STACK_IDX] = 0
             newState[i[0], i[1], COLOUR_IDX] = 0
@@ -132,36 +169,31 @@ class Player:
 
     # Finds all the pieces caught in a chain explosion originating from a
     # single coordinate
-    # Returns a doubleton 2D list with the lists of coordinates of enemy and
+    # Returns a doubleton 2D list with the sets of coordinates of enemy and
     # ally pieces repsectively caught in the chain explosion
     def collectAllBoomed(self, coord, state):
-        if state[coord[0], coord[1], COLOUR_IDX] == self.colour:
-            boomList = [{}, {coord}]
+        if state[coord[0], coord[1], COLOUR_IDX] == ALLY:
+            boomList = [set(), {coord}]
         else:
-            boomList = [{coord}, {}]
+            boomList = [{coord}, set()]
         caught = self.collectBoomed(coord, state)
-        print(str(caught))
         for i in caught:
-            if state[i[0], i[1], COLOUR_IDX] == self.colour:
-                # print(boomList[ALLY])
+            if state[i[0], i[1], COLOUR_IDX] == ALLY:
                 boomList[ALLY].add(i)
             else:
                 boomList[ENEMY].add(i)
-            print(str(caught))
-            caught.union(self.collectBoomed(i, state))
-        print("boomList: " + str(boomList))
+            caught = caught.union(self.collectBoomed(i, state))
+        # print("COLLECT BOOMLIST: " + str(boomList))
         return boomList
 
     # Finds the pieces caught in a singular explosion
     # Takes a 2-tuple x,y, returns set of 2-tuple coordinates of pieces caught
     def collectBoomed(self, boomed, state):
         xbounds, ybounds = self.getBounds(boomed[0]), self.getBounds(boomed[1])
-        # print("BOUNDS " + str(xbounds) + ", " + str(ybounds))
         # May have to switch indexing due to cartesian coordinates
         explosion = state[xbounds[0]:xbounds[1], ybounds[0]:ybounds[1], :]
-        assert(explosion.shape in LEGAL_BOOMS)
+        assert(explosion.shape in LEGAL_BOOM_SHAPES)
         pieces = np.where(explosion[:, :, STACK_IDX] > 0)
-        # print("PIECES: " + str(pieces))
         caught = set(map(lambda i: self.explosionToCoords(boomed, i),
                      np.stack(pieces, axis=1).tolist()))
         return caught
@@ -180,6 +212,34 @@ class Player:
         yoff = 0 if centre[1] == 0 else -1
         return (coord[0] + xoff + centre[0], coord[1] + yoff + centre[1])
 
-# class Heurisics:
-#     def __init__(self):
+    # Consider refactoring this, along with all other heurstics
+    # into a Heuristic utility class
+    def getBoomCount(self, coord, state):
+        boomSets = self.collectAllBoomed(coord, state)
+        # print("BOOMSETS: " + str(boomSets))
+        boomCounter = [0, 0]
+        for i in boomSets[ALLY]:
+            boomCounter[ALLY] += state[i[0], i[1], STACK_IDX]
+        for i in boomSets[ENEMY]:
+            boomCounter[ENEMY] += state[i[0], i[1], STACK_IDX]
+        # print("BOOMCOUNT COUNTER: " + str(boomCounter))
+        return boomCounter
 
+    # A desirable boom is one where there are more enemy pieces
+    # lost then ally pieces. Returns the coordinates of the most
+    # desirable boom, or None if not present
+    def getMostDesirableBoom(self, state):
+        allyCoords = self.getAllyCoords(state)
+        # TEST: Asignment of both at the same time could be dodgy
+        bestCoord, bestCount = (0, 0), [0, 0]
+        for i in allyCoords:
+            # print("ALLY: " + str(allyCoords))
+            boomCounter = self.getBoomCount(i, state)
+            difference = boomCounter[ENEMY] - boomCounter[ALLY]
+            if difference > bestCount[ENEMY] - bestCount[ALLY]:
+                # print("DIFFERENCE: " + str(difference))
+                # print("COUNTER: " + str(boomCounter))
+                bestCoord, bestCount = i, boomCounter
+        # print(str(bestCount != [0, 0]), " BESTCOUNT: " + str(bestCount))
+        # TEST: Asignment of both at the same time could be dodgy
+        return (bestCoord, bestCount) if bestCount != [0, 0] else (None, None)
