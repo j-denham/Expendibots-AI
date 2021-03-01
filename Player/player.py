@@ -1,5 +1,6 @@
 import numpy as np
 import collections as col
+import queue
 import random
 
 # Constants
@@ -49,7 +50,6 @@ class Player:
         represented based on the spec's instructions for representing actions.
         """
         bestCoord, bestCount = self.getMostDesirableBoom(self.state)
-        print("Coords: " + str(self.getAllyCoords(self.state)))
         # Make a move based on the desirable boom heuristic
         if bestCoord is not None:
             return ("BOOM", bestCoord)
@@ -116,17 +116,12 @@ class Player:
     def getAllMoves(self, state):
         # Coords should never be empty, otherwise the player has already lost
         allyCoords = self.getAllyCoords(state)
-        # FIX: These are printing properly
         allMoves = set()
         for i in allyCoords:
             stack = state[i[0], i[1], STACK_IDX]
-            # print("Stack: " + str(stack))
             moveCoords = self.getMoveCoords(i, stack, state)
-            # print("Move Coords: " + str(moveCoords))
             moveSet = self.enumStackedMoves(i, stack, moveCoords)
-            # print("Move Set: " + str(moveSet))
             allMoves = allMoves.union(moveSet)
-        # print("All Moves: " + str(allMoves))
         return allMoves
 
     def getAllyCoords(self, state):
@@ -162,6 +157,7 @@ class Player:
         newState = state.copy()
         boomSets = self.collectAllBoomed(coord, state)
         allBoomed = boomSets[0].union(boomSets[1])
+        print("Caught in Boom: " + str(allBoomed))
         for i in allBoomed:
             newState[i[0], i[1], STACK_IDX] = 0
             newState[i[0], i[1], COLOUR_IDX] = 0
@@ -176,14 +172,20 @@ class Player:
             boomList = [set(), {coord}]
         else:
             boomList = [{coord}, set()]
-        caught = self.collectBoomed(coord, state)
-        for i in caught:
+        caught = queue.Queue()
+        caught.put(coord)
+        while caught.empty() is not True:
+            i = caught.get()
+            # print("CAUGHT ITERATION: " + str(i))
             if state[i[0], i[1], COLOUR_IDX] == ALLY:
                 boomList[ALLY].add(i)
             else:
                 boomList[ENEMY].add(i)
-            caught = caught.union(self.collectBoomed(i, state))
-        # print("COLLECT BOOMLIST: " + str(boomList))
+            newCaught = self.collectBoomed(i, state)
+            for j in newCaught:
+                if j in boomList[ALLY] or j in boomList[ENEMY]:
+                    continue
+                caught.put(j)
         return boomList
 
     # Finds the pieces caught in a singular explosion
@@ -216,13 +218,11 @@ class Player:
     # into a Heuristic utility class
     def getBoomCount(self, coord, state):
         boomSets = self.collectAllBoomed(coord, state)
-        # print("BOOMSETS: " + str(boomSets))
         boomCounter = [0, 0]
         for i in boomSets[ALLY]:
             boomCounter[ALLY] += state[i[0], i[1], STACK_IDX]
         for i in boomSets[ENEMY]:
             boomCounter[ENEMY] += state[i[0], i[1], STACK_IDX]
-        # print("BOOMCOUNT COUNTER: " + str(boomCounter))
         return boomCounter
 
     # A desirable boom is one where there are more enemy pieces
@@ -230,16 +230,10 @@ class Player:
     # desirable boom, or None if not present
     def getMostDesirableBoom(self, state):
         allyCoords = self.getAllyCoords(state)
-        # TEST: Asignment of both at the same time could be dodgy
         bestCoord, bestCount = (0, 0), [0, 0]
         for i in allyCoords:
-            # print("ALLY: " + str(allyCoords))
             boomCounter = self.getBoomCount(i, state)
             difference = boomCounter[ENEMY] - boomCounter[ALLY]
             if difference > bestCount[ENEMY] - bestCount[ALLY]:
-                # print("DIFFERENCE: " + str(difference))
-                # print("COUNTER: " + str(boomCounter))
                 bestCoord, bestCount = i, boomCounter
-        # print(str(bestCount != [0, 0]), " BESTCOUNT: " + str(bestCount))
-        # TEST: Asignment of both at the same time could be dodgy
         return (bestCoord, bestCount) if bestCount != [0, 0] else (None, None)
